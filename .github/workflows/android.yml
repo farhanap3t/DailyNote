@@ -26,15 +26,16 @@ jobs:
 
       - name: Build Web Frontend & Sync Android
         run: |
-          npm --prefix client install
-          npm --prefix client run build
-          npx --prefix client cap sync android
+          cd client
+          npm install
+          npm run build
+          npx @capacitor/cli sync android
 
       - name: Build Android Debug APK
         run: |
           cd client/android
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --no-daemon
 
       - name: Upload DailyNote APK
         uses: actions/upload-artifact@v4
