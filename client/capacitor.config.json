@@ -1,0 +1,9 @@
+{
+  "appId": "com.dailynote.app",
+  "appName": "DailyNote",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}
+
