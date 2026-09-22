@@ -11,7 +11,9 @@
     "start": "node server/src/index.js",
     "build": "npm --prefix client install && npm --prefix client run build",
     "dev": "node run-dev.js",
-    "test": "npm --prefix server test"
+    "test": "npm --prefix server test",
+    "android:sync": "npm --prefix client run build && npx --prefix client cap sync android",
+    "android:open": "npx --prefix client cap open android"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
