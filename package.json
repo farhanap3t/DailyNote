@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "description": "DailyNote — Personal Daily Journal & Productivity (Web & Android Ready)",
   "main": "server/src/index.js",
+  "workspaces": [
+    "client",
+    "server"
+  ],
   "scripts": {
     "start": "node server/src/index.js",
     "build": "npm --prefix client install && npm --prefix client run build",
