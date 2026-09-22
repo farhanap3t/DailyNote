@@ -4,7 +4,6 @@ node_modules/
 .pnp.js
 
 # Production build
-dist/
 dist-ssr/
 *.local
 
@@ -41,3 +40,4 @@ lerna-debug.log*
 *.njsproj
 *.sln
 *.sw?
+
