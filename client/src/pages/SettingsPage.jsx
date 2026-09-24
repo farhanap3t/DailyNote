@@ -13,14 +13,15 @@ import {
   Moon,
   Monitor,
   Cloud,
-  Smartphone
+  Smartphone,
+  ArrowLeft
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
 import ServerConfigModal from '../components/layout/ServerConfigModal';
 
-export default function SettingsPage() {
+export default function SettingsPage({ onNavigate, onBack }) {
   const { logout } = useAuth();
   const { theme, setTheme } = useTheme();
 
@@ -120,18 +121,70 @@ export default function SettingsPage() {
     }
   };
 
+  const handleExport = (format) => {
+    try {
+      const notes = api.getLocalNotes();
+      if (!notes || notes.length === 0) {
+        alert('Belum ada catatan yang tersimpan untuk diekspor.');
+        return;
+      }
+      if (format === 'json') {
+        const jsonStr = JSON.stringify(notes, null, 2);
+        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const downloadUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = `dailynote-export-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(downloadUrl);
+      } else {
+        let md = `# DailyNote Export - ${new Date().toISOString().slice(0, 10)}\n\n`;
+        notes.forEach(n => {
+          md += `## ${n.title || 'Tanpa Judul'}\n`;
+          md += `*Tanggal: ${n.note_date} | Mood: ${n.mood || '-'}*\n\n`;
+          md += `${(n.content || '').replace(/<[^>]*>/g, '')}\n\n---\n\n`;
+        });
+        const blob = new Blob([md], { type: 'text/markdown' });
+        const downloadUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = `dailynote-export-${new Date().toISOString().slice(0, 10)}.md`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(downloadUrl);
+      }
+    } catch (e) {
+      alert('Gagal mengekspor catatan: ' + e.message);
+    }
+  };
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2.5">
-            <Settings className="w-6 h-6 text-sky-500" />
-            Pengaturan Aplikasi
-          </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            Sesuaikan preferensi tampilan, bahasa, pengingat harian, dan ekspor data
-          </p>
+        <div className="flex items-center gap-3">
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+              title="Kembali ke Beranda"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+          )}
+          <div>
+            <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+              <Settings className="w-5 h-5 text-sky-500" />
+              Pengaturan Aplikasi
+            </h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Sesuaikan preferensi tampilan, bahasa, pengingat harian, dan ekspor data
+            </p>
+          </div>
         </div>
 
         {savedSuccess && (
@@ -298,23 +351,23 @@ export default function SettingsPage() {
         </p>
 
         <div className="flex flex-wrap items-center gap-3">
-          <a
-            href={api.exportNotesUrl('json')}
-            download="dailynote-export.json"
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-colors shadow-sm"
+          <button
+            type="button"
+            onClick={() => handleExport('json')}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-colors shadow-sm active:scale-95"
           >
             <Download className="w-4 h-4 text-sky-500" />
             <span>Ekspor Semua Catatan (JSON)</span>
-          </a>
+          </button>
 
-          <a
-            href={api.exportNotesUrl('markdown')}
-            download="dailynote-export.md"
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-colors shadow-sm"
+          <button
+            type="button"
+            onClick={() => handleExport('markdown')}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-colors shadow-sm active:scale-95"
           >
             <Download className="w-4 h-4 text-indigo-500" />
             <span>Ekspor Semua Catatan (Markdown)</span>
-          </a>
+          </button>
         </div>
       </div>
 

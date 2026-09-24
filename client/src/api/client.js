@@ -618,7 +618,7 @@ class ApiClient {
 
   // Export
   exportNotesUrl(format = 'json') {
-    return `${API_BASE}/export?format=${format}`;
+    return `${this.getApiBase()}/export?format=${format}`;
   }
 }
 

@@ -150,3 +150,4 @@ export default function ServerConfigModal({ isOpen, onClose, onServerSaved }) {
     </div>
   );
 }
+

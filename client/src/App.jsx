@@ -12,6 +12,7 @@ import SearchPage from './pages/SearchPage';
 import StatisticsPage from './pages/StatisticsPage';
 import ProfilePage from './pages/ProfilePage';
 import SettingsPage from './pages/SettingsPage';
+import ErrorBoundary from './components/layout/ErrorBoundary';
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -145,7 +146,7 @@ export default function App() {
         return <ProfilePage />;
 
       case 'settings':
-        return <SettingsPage />;
+        return <SettingsPage onNavigate={handleNavigate} onBack={() => handleNavigate('dashboard')} />;
 
       default:
         return (
@@ -159,7 +160,9 @@ export default function App() {
 
   return (
     <AppLayout activeTab={currentTab} onNavigate={handleNavigate}>
-      {renderContent()}
+      <ErrorBoundary onReset={() => setCurrentTab('dashboard')}>
+        {renderContent()}
+      </ErrorBoundary>
     </AppLayout>
   );
 }
