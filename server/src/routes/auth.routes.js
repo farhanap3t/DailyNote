@@ -80,12 +80,12 @@ router.post('/login', (req, res) => {
 
   const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase().trim());
   if (!user) {
-    return res.status(401).json({ error: 'Email atau password salah.' });
+    return res.status(401).json({ error: 'Email atau password salah.', userNotFound: true });
   }
 
   const isMatch = bcrypt.compareSync(password, user.password_hash);
   if (!isMatch) {
-    return res.status(401).json({ error: 'Email atau password salah.' });
+    return res.status(401).json({ error: 'Email atau password salah.', userNotFound: false });
   }
 
   const token = jwt.sign({ id: user.id, email: user.email, name: user.name }, config.JWT_SECRET, {

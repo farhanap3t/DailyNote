@@ -5,10 +5,11 @@ import { api } from '../api/client';
 import ServerConfigModal from '../components/layout/ServerConfigModal';
 
 export default function LoginPage({ onNavigate }) {
-  const { login } = useAuth();
+  const { login, register } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [userNotFound, setUserNotFound] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isServerModalOpen, setIsServerModalOpen] = useState(false);
   const [serverUrl, setServerUrl] = useState(api.getServerUrl());
@@ -16,11 +17,29 @@ export default function LoginPage({ onNavigate }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg('');
+    setUserNotFound(false);
     setLoading(true);
     try {
       await login(email, password);
     } catch (err) {
       setErrorMsg(err.message || 'Login gagal. Periksa kembali email dan password Anda.');
+      if (err.userNotFound || (err.message && err.message.toLowerCase().includes('email atau password salah'))) {
+        setUserNotFound(true);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAutoRegister = async () => {
+    if (!email || !password) return;
+    setErrorMsg('');
+    setLoading(true);
+    try {
+      const name = email.split('@')[0];
+      await register(name, email, password, password);
+    } catch (err) {
+      setErrorMsg(err.message || 'Pendaftaran otomatis gagal.');
     } finally {
       setLoading(false);
     }
@@ -54,9 +73,26 @@ export default function LoginPage({ onNavigate }) {
           </div>
 
           {errorMsg && (
-            <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{errorMsg}</span>
+            <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-xs space-y-2.5">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{errorMsg}</span>
+              </div>
+              {userNotFound && (
+                <div className="pt-2 border-t border-rose-200/60 dark:border-rose-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <span className="text-[11px] text-slate-600 dark:text-slate-400">
+                    Akun belum ada di server (server baru di-deploy/restart).
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleAutoRegister}
+                    disabled={loading}
+                    className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white font-semibold text-xs transition shrink-0 shadow-sm"
+                  >
+                    Daftarkan Akun Ini Sekarang
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

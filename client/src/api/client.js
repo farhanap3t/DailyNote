@@ -20,12 +20,14 @@ class ApiClient {
   }
 
   isNativeApp() {
-    return (
-      (typeof window !== 'undefined' &&
-        (window.location.protocol === 'capacitor:' ||
-         window.location.hostname === 'localhost' ||
-         window.location.hostname === '127.0.0.1'))
-    );
+    if (typeof window === 'undefined') return false;
+    if (window.location.protocol === 'capacitor:' || window.location.protocol === 'ionic:') {
+      return true;
+    }
+    if (window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function') {
+      return window.Capacitor.isNativePlatform();
+    }
+    return false;
   }
 
   getToken() {
@@ -148,7 +150,7 @@ class ApiClient {
     try {
       const response = await fetch(`${apiBase}${endpoint}`, config);
 
-      if (response.status === 401) {
+      if (response.status === 401 && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/register')) {
         this.setToken(null);
         window.dispatchEvent(new CustomEvent('auth:unauthorized'));
         throw new Error('Sesi berakhir. Silakan login kembali.');
@@ -158,7 +160,10 @@ class ApiClient {
       if (contentType.includes('application/json')) {
         const data = await response.json();
         if (!response.ok) {
-          throw new Error(data.error || 'Terjadi kesalahan pada permintaan.');
+          const err = new Error(data.error || 'Terjadi kesalahan pada permintaan.');
+          err.userNotFound = Boolean(data.userNotFound);
+          err.status = response.status;
+          throw err;
         }
         return data;
       }
@@ -191,28 +196,55 @@ class ApiClient {
       }
       return res;
     } catch (err) {
-      // Offline fallback: check stored local users
+      // Check if user exists in local storage (self-healing for Vercel cold restarts or offline mode)
       const users = this.getLocalUsers();
       const match = users.find(u => u.email === cleanEmail);
-      if (match) {
-        if (match._password && match._password !== password) {
-          throw new Error('Password salah untuk akun lokal ini.');
+      const singleUser = this.getLocalUser();
+      const existingLocal = match || (singleUser && singleUser.email === cleanEmail ? singleUser : null);
+
+      if (existingLocal) {
+        // If password stored, verify
+        if (existingLocal._password && existingLocal._password !== password) {
+          throw new Error('Password salah. Periksa kembali password Anda.');
         }
-        const token = 'offline-token-' + Date.now();
-        this.setToken(token);
-        this.saveLocalUser(match);
-        return { message: 'Login offline berhasil.', token, user: match };
+
+        // Self-healing: if the server restarted and wiped /tmp SQLite (common on Vercel free tier),
+        // seamlessly re-create the user account on the server and restore session!
+        if (!this.isNativeApp() || this.getServerUrl()) {
+          try {
+            const reReg = await this.request('/auth/register', {
+              method: 'POST',
+              body: {
+                name: existingLocal.name || cleanEmail.split('@')[0],
+                email: cleanEmail,
+                password,
+                confirmPassword: password
+              }
+            });
+            if (reReg && reReg.token) {
+              this.saveLocalUser(reReg.user);
+              this.addLocalUser(reReg.user, password);
+              this.syncLocalNotesToServer().catch(() => {});
+              return reReg;
+            }
+          } catch (reRegErr) {
+            if (reRegErr.message && reRegErr.message.includes('sudah terdaftar')) {
+              throw new Error('Email atau password salah.');
+            }
+          }
+        }
+
+        // Offline mode fallback for native app
+        if (this.isNativeApp()) {
+          const token = 'offline-token-' + Date.now();
+          this.setToken(token);
+          this.saveLocalUser(existingLocal);
+          return { message: 'Login offline berhasil.', token, user: existingLocal };
+        }
       }
 
-      const localUser = this.getLocalUser();
-      if (localUser && localUser.email === cleanEmail) {
-        const token = 'offline-token-' + Date.now();
-        this.setToken(token);
-        return { message: 'Login offline berhasil.', token, user: localUser };
-      }
-
-      // If user hasn't set up a server URL yet, allow instant local creation & login
-      if (!this.getServerUrl()) {
+      // If on native app with no server configured, auto-create local account
+      if (this.isNativeApp() && !this.getServerUrl()) {
         const token = 'offline-token-' + Date.now();
         const user = {
           id: 'local-' + Date.now(),
@@ -225,8 +257,30 @@ class ApiClient {
         return { message: 'Mode offline: Berhasil masuk.', token, user };
       }
 
-      // Re-throw server error
+      // Re-throw original server error
       throw err;
+    }
+  }
+
+  async syncLocalNotesToServer() {
+    const localNotes = this.getLocalNotes();
+    if (!localNotes || localNotes.length === 0) return;
+    for (const note of localNotes) {
+      if (note.id && !note.id.startsWith('local-')) continue;
+      try {
+        await this.request('/notes', {
+          method: 'POST',
+          body: {
+            title: note.title,
+            content: note.content,
+            note_date: note.note_date,
+            mood: note.mood,
+            is_favorite: note.is_favorite ? 1 : 0,
+            tags: (note.tags || []).map(t => typeof t === 'string' ? t : t.name),
+            checklists: note.checklists || []
+          }
+        });
+      } catch (e) {}
     }
   }
 
@@ -243,6 +297,16 @@ class ApiClient {
       }
       return res;
     } catch (err) {
+      // Re-throw server business validation errors so the UI can inform the user
+      if (err.message && (
+        err.message.includes('sudah terdaftar') ||
+        err.message.includes('tidak cocok') ||
+        err.message.includes('minimal') ||
+        err.message.includes('wajib diisi')
+      )) {
+        throw err;
+      }
+
       // Offline fallback
       const token = 'offline-token-' + Date.now();
       const user = {
@@ -292,6 +356,17 @@ class ApiClient {
       if (date) params.append('date', date);
       const res = await this.request(`/notes?${params.toString()}`);
       if (res.notes) {
+        if (!filter || filter === 'all') {
+          const local = this.getLocalNotes();
+          const serverIds = new Set(res.notes.map(n => n.id));
+          const unsynced = local.filter(n => !serverIds.has(n.id) && !n.is_deleted);
+          const merged = [...res.notes, ...unsynced];
+          this.saveLocalNotes(merged);
+          if (unsynced.length > 0) {
+            this.syncLocalNotesToServer().catch(() => {});
+          }
+          return { notes: merged };
+        }
         this.saveLocalNotes(res.notes);
       }
       return res;
