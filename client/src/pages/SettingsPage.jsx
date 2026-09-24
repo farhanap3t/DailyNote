@@ -11,11 +11,14 @@ import {
   AlertTriangle,
   Sun,
   Moon,
-  Monitor
+  Monitor,
+  Cloud,
+  Smartphone
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
+import ServerConfigModal from '../components/layout/ServerConfigModal';
 
 export default function SettingsPage() {
   const { logout } = useAuth();
@@ -23,6 +26,8 @@ export default function SettingsPage() {
 
   const [language, setLanguage] = useState('id');
   const [dateFormat, setDateFormat] = useState('YYYY-MM-DD');
+  const [isServerModalOpen, setIsServerModalOpen] = useState(false);
+  const [serverUrl, setServerUrl] = useState(api.getServerUrl());
   const [timeFormat, setTimeFormat] = useState('24h');
   const [reminderEnabled, setReminderEnabled] = useState(false);
   const [reminderTime, setReminderTime] = useState('20:00');
@@ -313,7 +318,45 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* 5. ACCOUNT & DANGER ZONE (PRD Section 26) */}
+      {/* 5. SERVER & CLOUD SYNC */}
+      <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+        <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+          <Cloud className="w-4 h-4 text-sky-500" />
+          Server & Sinkronisasi Cloud
+        </h3>
+        <p className="text-xs text-slate-400">
+          Hubungkan aplikasi dengan server backend website (Vercel) untuk sinkronisasi catatan otomatis di semua perangkat.
+        </p>
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+          <div className="space-y-1">
+            <span className="text-xs text-slate-400 font-medium">Status Koneksi:</span>
+            <div className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-200">
+              {serverUrl ? (
+                <>
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Terhubung ke {serverUrl}</span>
+                </>
+              ) : (
+                <>
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                  <span>Mode Offline (Penyimpanan Lokal HP)</span>
+                </>
+              )}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsServerModalOpen(true)}
+            className="px-4 py-2 rounded-xl text-xs font-semibold bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800 text-sky-600 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-900/50 transition"
+          >
+            Ubah Pengaturan Server
+          </button>
+        </div>
+      </div>
+
+      {/* 6. ACCOUNT & DANGER ZONE (PRD Section 26) */}
       <div className="p-6 rounded-2xl bg-rose-50/40 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/60 space-y-4">
         <h3 className="text-sm font-bold text-rose-700 dark:text-rose-400 uppercase tracking-wider flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 text-rose-500" />
@@ -344,6 +387,12 @@ export default function SettingsPage() {
           {saving ? 'Menyimpan...' : 'Simpan Pengaturan'}
         </button>
       </div>
+
+      <ServerConfigModal
+        isOpen={isServerModalOpen}
+        onClose={() => setIsServerModalOpen(false)}
+        onServerSaved={(newUrl) => setServerUrl(newUrl)}
+      />
     </div>
   );
 }

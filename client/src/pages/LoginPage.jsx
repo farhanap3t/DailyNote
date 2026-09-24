@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { Mail, Lock, ArrowRight, AlertCircle, FileText } from 'lucide-react';
+import { Mail, Lock, ArrowRight, AlertCircle, FileText, Globe, Cloud, Smartphone } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../api/client';
+import ServerConfigModal from '../components/layout/ServerConfigModal';
 
 export default function LoginPage({ onNavigate }) {
   const { login } = useAuth();
@@ -8,6 +10,8 @@ export default function LoginPage({ onNavigate }) {
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isServerModalOpen, setIsServerModalOpen] = useState(false);
+  const [serverUrl, setServerUrl] = useState(api.getServerUrl());
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -110,7 +114,7 @@ export default function LoginPage({ onNavigate }) {
             </button>
           </form>
 
-          <div className="text-center pt-2 border-t border-slate-100 dark:border-slate-800">
+          <div className="text-center pt-2 border-t border-slate-100 dark:border-slate-800 space-y-3">
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Belum punya akun?{' '}
               <button
@@ -121,9 +125,38 @@ export default function LoginPage({ onNavigate }) {
                 Daftar sekarang
               </button>
             </p>
+
+            {/* Server Connection status & switch */}
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => setIsServerModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition"
+              >
+                {serverUrl ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <Cloud className="w-3.5 h-3.5 text-sky-500" />
+                    <span className="truncate max-w-[180px]">Server: {serverUrl.replace(/^https?:\/\//, '')}</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-amber-500" />
+                    <Smartphone className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Mode Offline (Klik untuk hubungkan ke Web)</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>
+
+      <ServerConfigModal
+        isOpen={isServerModalOpen}
+        onClose={() => setIsServerModalOpen(false)}
+        onServerSaved={(newUrl) => setServerUrl(newUrl)}
+      />
     </div>
   );
 }

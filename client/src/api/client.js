@@ -1,6 +1,33 @@
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || '') + '/api';
-
 class ApiClient {
+  getServerUrl() {
+    return localStorage.getItem('dailynote_server_url') || import.meta.env.VITE_API_BASE_URL || '';
+  }
+
+  setServerUrl(url) {
+    if (url && url.trim()) {
+      localStorage.setItem('dailynote_server_url', url.trim().replace(/\/$/, ''));
+    } else {
+      localStorage.removeItem('dailynote_server_url');
+    }
+  }
+
+  getApiBase() {
+    const custom = this.getServerUrl();
+    if (custom) {
+      return custom.replace(/\/$/, '') + '/api';
+    }
+    return '/api';
+  }
+
+  isNativeApp() {
+    return (
+      (typeof window !== 'undefined' &&
+        (window.location.protocol === 'capacitor:' ||
+         window.location.hostname === 'localhost' ||
+         window.location.hostname === '127.0.0.1'))
+    );
+  }
+
   getToken() {
     return localStorage.getItem('dailynote_token');
   }
@@ -28,6 +55,24 @@ class ApiClient {
     } catch (e) {}
   }
 
+  getLocalUsers() {
+    try {
+      return JSON.parse(localStorage.getItem('dailynote_local_users') || '[]');
+    } catch (e) {
+      return [];
+    }
+  }
+
+  addLocalUser(user, password = '') {
+    try {
+      const users = this.getLocalUsers();
+      const filtered = users.filter(u => u.email !== user.email);
+      filtered.push({ ...user, _password: password });
+      localStorage.setItem('dailynote_local_users', JSON.stringify(filtered));
+      this.saveLocalUser(user);
+    } catch (e) {}
+  }
+
   getLocalUser() {
     try {
       return JSON.parse(localStorage.getItem('dailynote_local_user') || 'null');
@@ -46,7 +91,40 @@ class ApiClient {
     } catch (e) {}
   }
 
+  async testConnection(targetUrl) {
+    const base = (targetUrl || this.getServerUrl() || '').trim().replace(/\/$/, '');
+    if (!base) {
+      return { ok: false, error: 'URL server belum diisi' };
+    }
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const res = await fetch(`${base}/api/health`, {
+        method: 'GET',
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        return { ok: false, error: 'Server merespons tetapi bukan API DailyNote (cek perlindungan Vercel/SSO)' };
+      }
+      const data = await res.json();
+      if (res.ok && data.status === 'ok') {
+        return { ok: true, data };
+      }
+      return { ok: false, error: data.error || 'Server menolak koneksi' };
+    } catch (e) {
+      return { ok: false, error: e.name === 'AbortError' ? 'Koneksi timeout (server tidak merespons)' : (e.message || 'Tidak dapat terhubung ke server') };
+    }
+  }
+
   async request(endpoint, options = {}) {
+    // If running in Capacitor/Android native without a configured cloud server URL,
+    // skip requesting localhost (which returns 404/index.html) and trigger offline fallback immediately
+    if (this.isNativeApp() && !this.getServerUrl()) {
+      throw new Error('OFFLINE_MODE');
+    }
+
     const token = this.getToken();
     const headers = {
       ...(options.isFormData ? {} : { 'Content-Type': 'application/json' }),
@@ -66,8 +144,9 @@ class ApiClient {
       config.body = JSON.stringify(options.body);
     }
 
+    const apiBase = this.getApiBase();
     try {
-      const response = await fetch(`${API_BASE}${endpoint}`, config);
+      const response = await fetch(`${apiBase}${endpoint}`, config);
 
       if (response.status === 401) {
         this.setToken(null);
@@ -75,58 +154,93 @@ class ApiClient {
         throw new Error('Sesi berakhir. Silakan login kembali.');
       }
 
-      const contentType = response.headers.get('content-type');
-      if (contentType && contentType.includes('application/json')) {
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
         const data = await response.json();
         if (!response.ok) {
           throw new Error(data.error || 'Terjadi kesalahan pada permintaan.');
         }
         return data;
-      } else {
-        if (!response.ok) {
-          throw new Error('Terjadi kesalahan pada server.');
-        }
-        return response;
       }
+
+      // If expecting binary blob (e.g. export download)
+      if (options.expectBlob) {
+        if (!response.ok) throw new Error('Gagal mengunduh file.');
+        return response.blob();
+      }
+
+      // If server returned HTML (like 404/Vercel login redirect) instead of API JSON:
+      throw new Error(`Server tidak mengembalikan respons JSON (HTTP ${response.status}). Periksa URL server Anda.`);
     } catch (error) {
-      console.warn(`[API] Fallback for ${endpoint}:`, error.message);
+      console.warn(`[API] Network error for ${endpoint}:`, error.message);
       throw error;
     }
   }
 
   // Auth
   async login(email, password) {
+    const cleanEmail = email.toLowerCase().trim();
     try {
       const res = await this.request('/auth/login', {
         method: 'POST',
-        body: { email, password },
+        body: { email: cleanEmail, password },
       });
-      this.saveLocalUser(res.user);
+      if (res && res.user) {
+        this.saveLocalUser(res.user);
+        this.addLocalUser(res.user, password);
+      }
       return res;
     } catch (err) {
-      // Offline fallback: check local user
+      // Offline fallback: check stored local users
+      const users = this.getLocalUsers();
+      const match = users.find(u => u.email === cleanEmail);
+      if (match) {
+        if (match._password && match._password !== password) {
+          throw new Error('Password salah untuk akun lokal ini.');
+        }
+        const token = 'offline-token-' + Date.now();
+        this.setToken(token);
+        this.saveLocalUser(match);
+        return { message: 'Login offline berhasil.', token, user: match };
+      }
+
       const localUser = this.getLocalUser();
-      if (localUser && localUser.email === email.toLowerCase().trim()) {
+      if (localUser && localUser.email === cleanEmail) {
         const token = 'offline-token-' + Date.now();
         this.setToken(token);
         return { message: 'Login offline berhasil.', token, user: localUser };
       }
-      // If demo or first login offline
-      const token = 'offline-token-' + Date.now();
-      const user = { id: 'offline-user-1', name: email.split('@')[0], email, created_at: new Date().toISOString() };
-      this.setToken(token);
-      this.saveLocalUser(user);
-      return { message: 'Login berhasil.', token, user };
+
+      // If user hasn't set up a server URL yet, allow instant local creation & login
+      if (!this.getServerUrl()) {
+        const token = 'offline-token-' + Date.now();
+        const user = {
+          id: 'local-' + Date.now(),
+          name: cleanEmail.split('@')[0],
+          email: cleanEmail,
+          created_at: new Date().toISOString()
+        };
+        this.setToken(token);
+        this.addLocalUser(user, password);
+        return { message: 'Mode offline: Berhasil masuk.', token, user };
+      }
+
+      // Re-throw server error
+      throw err;
     }
   }
 
   async register(name, email, password, confirmPassword) {
+    const cleanEmail = email.toLowerCase().trim();
     try {
       const res = await this.request('/auth/register', {
         method: 'POST',
-        body: { name, email, password, confirmPassword },
+        body: { name, email: cleanEmail, password, confirmPassword },
       });
-      this.saveLocalUser(res.user);
+      if (res && res.user) {
+        this.saveLocalUser(res.user);
+        this.addLocalUser(res.user, password);
+      }
       return res;
     } catch (err) {
       // Offline fallback
@@ -134,13 +248,13 @@ class ApiClient {
       const user = {
         id: 'local-' + Date.now(),
         name: name.trim(),
-        email: email.toLowerCase().trim(),
+        email: cleanEmail,
         profile_image: null,
         created_at: new Date().toISOString()
       };
       this.setToken(token);
-      this.saveLocalUser(user);
-      return { message: 'Pendaftaran berhasil.', token, user };
+      this.addLocalUser(user, password);
+      return { message: 'Pendaftaran offline berhasil.', token, user };
     }
   }
 
